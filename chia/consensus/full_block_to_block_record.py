@@ -88,6 +88,13 @@ def block_to_block_record(
     )
 
 
+def maybe_uint64(val: Optional[int]) -> Optional[uint64]:
+    if val is None:
+        return None
+    else:
+        return uint64(val)
+
+
 def header_block_to_sub_block_record(
     constants: ConsensusConstants,
     required_iters: uint64,
@@ -160,9 +167,9 @@ def header_block_to_sub_block_record(
         deficit,
         overflow,
         prev_transaction_block_height,
-        timestamp,
+        maybe_uint64(timestamp),
         prev_transaction_block_hash,
-        fees,
+        maybe_uint64(fees),
         reward_claims_incorporated,
         finished_challenge_slot_hashes,
         finished_infused_challenge_slot_hashes,
