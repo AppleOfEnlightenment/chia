@@ -79,8 +79,9 @@ class FullNodeStore:
     recent_signage_points: LRUCache[bytes32, Tuple[SignagePoint, float]]
     recent_eos: LRUCache[bytes32, Tuple[EndOfSubSlotBundle, float]]
 
-    # Partial hashes of unfinished blocks we are requesting
-    requesting_unfinished_blocks: Set[bytes32]
+    # Partial hashes and optional foliage hashes of unfinished blocks we are
+    # requesting
+    requesting_unfinished_blocks: Set[Tuple[bytes32, Optional[bytes32]]]
 
     previous_generator: Optional[CompressorArg]
     pending_tx_request: Dict[bytes32, bytes32]  # tx_id: peer_id
@@ -171,6 +172,15 @@ class FullNodeStore:
         if result is None:
             return None
         return result[1]
+
+    def get_unfinished_block2(
+        self, unfinished_reward_hash: bytes32, unfinished_foliage_hash: Optional[bytes32]
+    ) -> Tuple[Optional[UnfinishedBlock], int]:
+        result = self.unfinished_blocks.get(unfinished_reward_hash, None)
+        if result is None:
+            return None, 0
+        # TODO:
+        return result[1], 0
 
     def get_unfinished_block_result(self, unfinished_reward_hash: bytes32) -> Optional[PreValidationResult]:
         result = self.unfinished_blocks.get(unfinished_reward_hash, None)

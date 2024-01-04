@@ -30,6 +30,7 @@ from typing import (
 )
 
 from chia_rs import AugSchemeMPL
+from packaging.version import Version
 
 from chia.consensus.block_body_validation import ForkInfo
 from chia.consensus.block_creation import unfinished_block_to_full_block
@@ -2061,12 +2062,38 @@ class FullNode:
         timelord_msg = make_msg(ProtocolMessageTypes.new_unfinished_block_timelord, timelord_request)
         await self.server.send_to_all([timelord_msg], NodeType.TIMELORD)
 
+        # create two versions of the NewUnfinishedBlock message, one to be sent
+        # to newer clients and one for older clients
         full_node_request = full_node_protocol.NewUnfinishedBlock(block.reward_chain_block.get_hash())
         msg = make_msg(ProtocolMessageTypes.new_unfinished_block, full_node_request)
-        if peer is not None:
-            await self.server.send_to_all([msg], NodeType.FULL_NODE, peer.peer_node_id)
-        else:
-            await self.server.send_to_all([msg], NodeType.FULL_NODE)
+
+        full_node_request2 = full_node_protocol.NewUnfinishedBlock2(
+            block.reward_chain_block.get_hash(), block.foliage.foliage_transaction_block_hash
+        )
+        msg2 = make_msg(ProtocolMessageTypes.new_unfinished_block2, full_node_request2)
+
+        def old_clients(conn: WSChiaConnection) -> bool:
+            # don't send this to peers with new clients
+            if conn.protocol_version > Version("0.0.35"):
+                return False
+            # don't send the message back to the peer we got the unfinished
+            # block from
+            if peer is not None and conn.peer_node_id == peer.peer_node_id:
+                return False
+            return True
+
+        def new_clients(conn: WSChiaConnection) -> bool:
+            # don't send this to peers with old clients
+            if conn.protocol_version <= Version("0.0.35"):
+                return False
+            # don't send the message back to the peer we got the unfinished
+            # block from
+            if peer is not None and conn.peer_node_id == peer.peer_node_id:
+                return False
+            return True
+
+        await self.server.send_to_all_if([msg], NodeType.FULL_NODE, old_clients)
+        await self.server.send_to_all_if([msg2], NodeType.FULL_NODE, new_clients)
 
         self._state_changed("unfinished_block")
 

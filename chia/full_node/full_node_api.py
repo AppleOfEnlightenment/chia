@@ -427,21 +427,21 @@ class FullNodeAPI:
             return None
 
         # This prevents us from downloading the same block from many peers
-        if block_hash in self.full_node.full_node_store.requesting_unfinished_blocks:
+        if (block_hash, None) in self.full_node.full_node_store.requesting_unfinished_blocks:
             return None
 
         msg = make_msg(
             ProtocolMessageTypes.request_unfinished_block,
             full_node_protocol.RequestUnfinishedBlock(block_hash),
         )
-        self.full_node.full_node_store.requesting_unfinished_blocks.add(block_hash)
+        self.full_node.full_node_store.requesting_unfinished_blocks.add((block_hash, None))
 
         # However, we want to eventually download from other peers, if this peer does not respond
         # Todo: keep track of who it was
         async def eventually_clear() -> None:
             await asyncio.sleep(5)
-            if block_hash in self.full_node.full_node_store.requesting_unfinished_blocks:
-                self.full_node.full_node_store.requesting_unfinished_blocks.remove(block_hash)
+            if (block_hash, None) in self.full_node.full_node_store.requesting_unfinished_blocks:
+                self.full_node.full_node_store.requesting_unfinished_blocks.remove((block_hash, None))
 
         asyncio.create_task(eventually_clear())
 
@@ -450,6 +450,60 @@ class FullNodeAPI:
     @api_request(reply_types=[ProtocolMessageTypes.respond_unfinished_block])
     async def request_unfinished_block(
         self, request_unfinished_block: full_node_protocol.RequestUnfinishedBlock
+    ) -> Optional[Message]:
+        unfinished_block: Optional[UnfinishedBlock] = self.full_node.full_node_store.get_unfinished_block(
+            request_unfinished_block.unfinished_reward_hash
+        )
+        if unfinished_block is not None:
+            msg = make_msg(
+                ProtocolMessageTypes.respond_unfinished_block,
+                full_node_protocol.RespondUnfinishedBlock(unfinished_block),
+            )
+            return msg
+        return None
+
+    @api_request()
+    async def new_unfinished_block2(
+        self, new_unfinished_block: full_node_protocol.NewUnfinishedBlock2
+    ) -> Optional[Message]:
+        # Ignore if syncing
+        if self.full_node.sync_store.get_sync_mode():
+            return None
+        block_hash = new_unfinished_block.unfinished_reward_hash
+        foliage_hash = new_unfinished_block.foliage_hash
+        entry, count = self.full_node.full_node_store.get_unfinished_block2(block_hash, foliage_hash)
+
+        if entry is not None:
+            return None
+
+        max_duplicate_unfinished_blocks = self.full_node.config.get("max_duplicate_unfinished_blocks", 3)
+        if count > max_duplicate_unfinished_blocks:
+            return None
+
+        # This prevents us from downloading the same block from many peers
+        if (block_hash, foliage_hash) in self.full_node.full_node_store.requesting_unfinished_blocks:
+            return None
+
+        msg = make_msg(
+            ProtocolMessageTypes.request_unfinished_block2,
+            full_node_protocol.RequestUnfinishedBlock2(block_hash, foliage_hash),
+        )
+        self.full_node.full_node_store.requesting_unfinished_blocks.add((block_hash, foliage_hash))
+
+        # However, we want to eventually download from other peers, if this peer does not respond
+        # Todo: keep track of who it was
+        async def eventually_clear() -> None:
+            await asyncio.sleep(5)
+            if (block_hash, foliage_hash) in self.full_node.full_node_store.requesting_unfinished_blocks:
+                self.full_node.full_node_store.requesting_unfinished_blocks.remove((block_hash, foliage_hash))
+
+        asyncio.create_task(eventually_clear())
+
+        return msg
+
+    @api_request(reply_types=[ProtocolMessageTypes.respond_unfinished_block])
+    async def request_unfinished_block2(
+        self, request_unfinished_block: full_node_protocol.RequestUnfinishedBlock2
     ) -> Optional[Message]:
         unfinished_block: Optional[UnfinishedBlock] = self.full_node.full_node_store.get_unfinished_block(
             request_unfinished_block.unfinished_reward_hash
